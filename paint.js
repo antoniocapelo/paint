@@ -1,3 +1,65 @@
+function exportCanvas (canvas, opt = {}) {
+    const encoding = 'image/png';
+    let extension = (encoding.split('/')[1] || '').replace(/jpeg/i, 'jpg');
+    if (extension) {
+    extension = `.${extension}`.toLowerCase();
+    }
+    return {
+        extension,
+        type: encoding,
+        dataURL: canvas.toDataURL(encoding, opt.encodingQuality)
+    };
+}
+
+function createBlobFromDataURL (dataURL) {
+    return new Promise((resolve) => {
+        const splitIndex = dataURL.indexOf(',');
+        if (splitIndex === -1) {
+            resolve(new window.Blob());
+            return;
+        }
+        const base64 = dataURL.slice(splitIndex + 1);
+        const byteString = window.atob(base64);
+        const type = dataURL.slice(0, splitIndex);
+        const mimeMatch = /data:([^;]+)/.exec(type);
+        const mime = (mimeMatch ? mimeMatch[1] : '') || undefined;
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (var i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i);
+        }
+        resolve(new window.Blob([ ab ], { type: mime }));
+    });
+}
+
+function saveDataURL (dataURL, extension) {
+    return createBlobFromDataURL(dataURL)
+    .then(blob => saveToFile(blob, extension));
+}
+
+function saveToFile (blob, extension) {
+    return new Promise(resolve => {
+        var filename = `${+new Date()}${extension}`;
+
+        var link = document.createElement('a');
+        link.style.visibility = 'hidden';
+        link.target = '_blank';
+        link.download = filename;
+        link.href = window.URL.createObjectURL(blob);
+        document.body.appendChild(link);
+        link.onclick = () => {
+            link.onclick = noop;
+            setTimeout(() => {
+                window.URL.revokeObjectURL(blob);
+                if (link.parentElement) link.parentElement.removeChild(link);
+                link.removeAttribute('href');
+                resolve({ filename, client: false });
+            });
+        };
+        link.click();
+    });
+}
+
 var Paint = (function () {
     'use strict';
 
@@ -72,7 +134,7 @@ var Paint = (function () {
 
     //panel is aligned with the top left
     var PANEL_WIDTH = 300;
-    var PANEL_HEIGHT = 580;
+    var PANEL_HEIGHT = 660;
     var PANEL_BLUR_SAMPLES = 13;
     var PANEL_BLUR_STRIDE = 8;
 
@@ -391,7 +453,7 @@ var Paint = (function () {
               }).bind(this));
 
 
-            this.colorPicker = new ColorPicker(this, 'brushColorHSVA', wgl, canvas, shaderSources, COLOR_PICKER_LEFT, 0);
+            this.colorPicker = new ColorPicker(this, 'brushColorHSVA', wgl, canvas, shaderSources, COLOR_PICKER_LEFT, 2000);
 
             //this.brushViewer = new BrushViewer(wgl, this.brushProgram, 0, 800, 200, 300);
 
@@ -483,6 +545,10 @@ var Paint = (function () {
                     this.undo();
                 } else if (event.keyCode === 82) { //r
                     this.redo();
+                } else if (event.keyCode === 83 && !event.altKey && (event.metaKey || event.ctrlKey)) { // s
+                    event.preventDefault();
+
+                    this.save();
                 }
             }).bind(this));
 
@@ -547,7 +613,7 @@ var Paint = (function () {
             new Rectangle(rectangle.getRight(), rectangle.bottom, BOX_SHADOW_WIDTH, rectangle.height) // right
         ];
 
-        var screenRectangle = new Rectangle(0, 0, this.canvas.width, this.canvas.height);
+        var screenRectangle = new Rectangle(0, 0, 0, this.canvas.width, this.canvas.height);
         for (var i = 0; i < rectangles.length; ++i) {
             var rect = rectangles[i];
             rect.intersectRectangle(screenRectangle);
@@ -622,7 +688,7 @@ var Paint = (function () {
 
         //the rectangle we end up drawing the painting into
         var clippedPaintingRectangle = (this.interactionState === InteractionMode.RESIZING ? this.newPaintingRectangle : this.paintingRectangle).clone()
-                                           .intersectRectangle(new Rectangle(0, 0, this.canvas.width, this.canvas.height));
+        .intersectRectangle(new Rectangle(0, 0, this.canvas.width, this.canvas.height));
 
         if (this.needsRedraw) {
             //draw painting into texture
@@ -830,7 +896,6 @@ var Paint = (function () {
 
         this.snapshotIndex += 1;
 
-
         this.refreshDoButtons();
     };
 
@@ -971,7 +1036,9 @@ var Paint = (function () {
         imageData.data.set(savePixels);
         saveContext.putImageData(imageData, 0, 0);
 
-        window.open(saveCanvas.toDataURL());
+        var exportResult = exportCanvas(saveCanvas);
+
+        saveDataURL(exportResult.dataURL, exportResult.extension);
     };
 
     Paint.prototype.onMouseMove = function (event) {
@@ -984,7 +1051,6 @@ var Paint = (function () {
 
         this.brushX = mouseX;
         this.brushY = mouseY;
-
 
         if (!this.brushInitialized) {
             this.brush.initialize(this.brushX, this.brushY, BRUSH_HEIGHT * this.brushScale, this.brushScale);
@@ -1004,6 +1070,7 @@ var Paint = (function () {
 
             this.needsRedraw = true;
         } else if (this.interactionState === InteractionMode.RESIZING) {
+            
             if (this.resizingSide === ResizingSide.LEFT || this.resizingSide === ResizingSide.TOP_LEFT || this.resizingSide === ResizingSide.BOTTOM_LEFT) {
                 this.newPaintingRectangle.left = Utilities.clamp(mouseX,
                     this.paintingRectangle.getRight() - this.maxPaintingWidth,
@@ -1027,11 +1094,12 @@ var Paint = (function () {
                 this.newPaintingRectangle.height = Utilities.clamp(mouseY - this.paintingRectangle.bottom, MIN_PAINTING_WIDTH, this.maxPaintingWidth);
             }
 
+            this.simulator.updateCanvasSizeInfo(this.newPaintingRectangle.width, this.newPaintingRectangle.height);2
+
             this.needsRedraw = true;
         }
 
         this.colorPicker.onMouseMove(position.x, this.canvas.height - position.y);
-
 
         this.mouseX = mouseX;
         this.mouseY = mouseY;
@@ -1230,7 +1298,7 @@ var Paint = (function () {
         if (event.touches.length > 0) return; //don't fire if there are still touches remaining
 
         this.onMouseUp({});
-    };
+    }; 
 
     return Paint;
 }());

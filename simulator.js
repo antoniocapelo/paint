@@ -32,6 +32,8 @@ var Simulator = (function () {
         this.resolutionWidth = resolutionWidth;
         this.resolutionHeight = resolutionHeight;
 
+        this.updateCanvasSizeInfo(this.resolutionWidth, this.resolutionHeight);
+
         this.fluidity = 0.8;
 
         this.frameNumber = 0;
@@ -114,6 +116,11 @@ var Simulator = (function () {
         }
     };
 
+    Simulator.prototype.updateCanvasSizeInfo = function (width, height) {
+        document.querySelector('.width').textContent = width;
+        document.querySelector('.height').textContent = height;
+    };
+
     Simulator.prototype.clear = function () {
         this.clearTextures([this.paintTexture, this.paintTextureTemp]);
     };
@@ -135,7 +142,7 @@ var Simulator = (function () {
     //resizes the canvas with direct texel correspondence, offsetting the previous painting
     Simulator.prototype.resize = function (newWidth, newHeight, offsetX, offsetY, featherSize) {
         var wgl = this.wgl;
-
+        this.updateCanvasSizeInfo(newWidth, newHeight);
 
         var resizeDrawState = wgl.createDrawState()
             .bindFramebuffer(this.simulationFramebuffer)
@@ -156,9 +163,6 @@ var Simulator = (function () {
         wgl.drawArrays(resizeDrawState, wgl.TRIANGLE_STRIP, 0, 4);
 
         Utilities.swap(this, 'paintTexture', 'paintTextureTemp');
-
-
-
 
         this.resolutionWidth = newWidth;
         this.resolutionHeight = newHeight;
